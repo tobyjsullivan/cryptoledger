@@ -61,7 +61,7 @@ var (
  * This tool converts a CSV transaction record from an exchange to a normalized format
  */
 func main() {
-	if len(os.Args) != 6 {
+	if len(os.Args) != 4 {
 		println("error: invalid usage")
 		println(usage())
 		os.Exit(1)
@@ -84,8 +84,8 @@ func main() {
 	baseCurrency := os.Args[2]
 	quoteCurrency := os.Args[3]
 
-	infile := os.Args[4]
-	outfile := os.Args[5]
+	fin := os.Stdin
+	fout := os.Stdout
 
 	meta := &orderBook{
 		baseCurrency: currency(baseCurrency),
@@ -97,21 +97,9 @@ func main() {
 		log.Fatalln("[main] no reader found for exchange:", exchange)
 	}
 
-	fin, err := os.Open(infile)
-	if err != nil {
-		log.Fatalln("[main] failed to open input file:", err)
-	}
-
 	txns, err := reader(fin, meta)
 	if err != nil {
 		log.Fatalln("[main] failed to read full input file:", err)
-	}
-
-	log.Println("[main] Read txns. Count:", len(txns))
-
-	fout, err := os.Create(outfile)
-	if err != nil {
-		log.Fatalln("[main] failed to create file:", err)
 	}
 
 	err = writeTransactions(fout, txns)
@@ -131,7 +119,7 @@ func usage() string {
 	}
 	exchangeList := strings.Join(exchanges, "|")
 
-	return fmt.Sprintf("usage: %s <format: %s> <basecurrency> <quotecurrency> <infile> <outfile>", prog, exchangeList)
+	return fmt.Sprintf("usage: %s <format: %s> <basecurrency> <quotecurrency>", prog, exchangeList)
 }
 
 type orderBook struct {
@@ -167,13 +155,13 @@ type currency string
 
 type txnType string
 
-func writeTransactions(f *os.File, txns []*record) error {
+func writeTransactions(f *os.File, txns chan *record) error {
 	w := csv.NewWriter(f)
 	err := w.Write(csvHeaders)
 	if err != nil {
 		return err
 	}
-	for _, txn := range txns {
+	for txn := range txns {
 		err = w.Write(txn.CSV())
 		if err != nil {
 			return err
@@ -185,32 +173,37 @@ func writeTransactions(f *os.File, txns []*record) error {
 	return err
 }
 
-type inputReader func(*os.File, *orderBook) ([]*record, error)
+type inputReader func(*os.File, *orderBook) (chan *record, error)
 
-func readGdax(file *os.File, book *orderBook) ([]*record, error) {
+func readGdax(file *os.File, book *orderBook) (chan *record, error) {
 	r := csv.NewReader(file)
 	entries, err := r.ReadAll()
 	if err != nil {
-		return []*record{}, err
+		return nil, err
 	}
 
 	startRow := 1
 
-	records := make([]*record, 0)
-	for i, entry := range entries {
-		if i < startRow {
-			continue
+	txns := make(chan *record)
+
+	go func(txns chan *record) {
+		for i, entry := range entries {
+			if i < startRow {
+				continue
+			}
+
+			rec, err := ParseGdaxRecord(book, entry)
+			if err != nil {
+				log.Println("[readGdax] Error parsing record: ", err ,". line:", i)
+			}
+
+			txns <- rec
 		}
 
-		rec, err := ParseGdaxRecord(book, entry)
-		if err != nil {
-			log.Println("[readGdax] Error parsing record: ", err ,". line:", i)
-		}
+		close(txns)
+	}(txns)
 
-		records = append(records, rec)
-	}
-
-	return records, nil
+	return txns, nil
 }
 
 func ParseGdaxRecord(book *orderBook, values []string) (*record, error) {

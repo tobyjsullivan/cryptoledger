@@ -27,14 +27,6 @@ const (
 )
 
 var (
-	UnitDivisors = map[currency]int {
-		CurrencyBTC: 100000000,
-		CurrencyETH: 100000000,
-		CurrencyLTC: 100000000,
-		CurrencyCAD: 100,
-		CurrencyUSD: 100,
-	}
-
 	csvHeaders = []string{
 		"exchange",
 		"base_currency",
@@ -44,12 +36,6 @@ var (
 		"amount",
 		"price",
 		"fee",
-	}
-
-	validExchanges = []string{
-		ExchangeGdax,
-		ExchangeCoinbase,
-		ExchangeQuadriga,
 	}
 
 	exchangeReaders = map[string]inputReader {

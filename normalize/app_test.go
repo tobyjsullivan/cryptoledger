@@ -28,37 +28,7 @@ func TestParseGdaxRecord(t *testing.T) {
 		t.Fatal("Unexpected error:", err)
 	}
 
-	if result.exchange != expected.exchange {
-		t.Error("Unexpected exchange:", result.exchange, "Expected:", expected.exchange)
-	}
-
-	if result.baseCurrency != expected.baseCurrency {
-		t.Error("Unexpected base currency:", result.baseCurrency, "Expected:", expected.baseCurrency)
-	}
-
-	if result.quoteCurrency != expected.quoteCurrency {
-		t.Error("Unexpected quote currency:", result.quoteCurrency, "Expected:", expected.quoteCurrency)
-	}
-
-	if result.txnType != expected.txnType {
-		t.Error("Unexpected txnType:", result.txnType, "Expected:", expected.txnType)
-	}
-
-	if result.timestamp != expected.timestamp {
-		t.Error("Unexpected timestamp:", result.timestamp, "Expected:", expected.timestamp)
-	}
-
-	if result.amount != expected.amount {
-		t.Error("Unexpected amount:", result.amount, "Expected:", expected.amount)
-	}
-
-	if result.price != expected.price {
-		t.Error("Unexpected price:", result.price, "Expected:", expected.price)
-	}
-
-	if result.fee != expected.fee {
-		t.Error("Unexpected fee:", result.fee, "Expected:", expected.fee)
-	}
+	validateRecord(t, expected, result)
 }
 
 func TestRecord_CSV(t *testing.T) {
@@ -80,5 +50,65 @@ func TestRecord_CSV(t *testing.T) {
 		if resVal != expected[i] {
 			t.Error("Unexpected result:", resVal, "Expected:", expected[i])
 		}
+	}
+}
+
+func TestParseQuadrigaRecord(t *testing.T) {
+	orderBook := &orderBook{
+		baseCurrency: CurrencyBTC,
+		quoteCurrency: CurrencyCAD,
+	}
+	input := []string{"sell","btc","cad","0.05000000","21499.99","1074.99950000","5.37499750","1069.62450250","1513303913.151","12/15/2017 02:11:53"}
+	expected := &record{
+		exchange: ExchangeQuadriga,
+		baseCurrency: CurrencyBTC,
+		quoteCurrency: CurrencyCAD,
+		txnType: TransactionTypeTradeSell,
+		timestamp: time.Unix(1513303913, 151000000).UTC(),
+		amount: "0.05000000",
+		price: "21499.99",
+		fee: "5.37499750",
+	}
+
+	result, err := ParseQuadrigaRecord(orderBook, input)
+
+	if err != nil {
+		t.Fatal("Unexpected error:", err)
+	}
+
+	validateRecord(t, expected, result)
+}
+
+func validateRecord(t *testing.T, expected, actual *record) {
+	if actual.exchange != expected.exchange {
+		t.Error("Unexpected exchange:", actual.exchange, "Expected:", expected.exchange)
+	}
+
+	if actual.baseCurrency != expected.baseCurrency {
+		t.Error("Unexpected base currency:", actual.baseCurrency, "Expected:", expected.baseCurrency)
+	}
+
+	if actual.quoteCurrency != expected.quoteCurrency {
+		t.Error("Unexpected quote currency:", actual.quoteCurrency, "Expected:", expected.quoteCurrency)
+	}
+
+	if actual.txnType != expected.txnType {
+		t.Error("Unexpected txnType:", actual.txnType, "Expected:", expected.txnType)
+	}
+
+	if actual.timestamp != expected.timestamp {
+		t.Error("Unexpected timestamp:", actual.timestamp, "Expected:", expected.timestamp)
+	}
+
+	if actual.amount != expected.amount {
+		t.Error("Unexpected amount:", actual.amount, "Expected:", expected.amount)
+	}
+
+	if actual.price != expected.price {
+		t.Error("Unexpected price:", actual.price, "Expected:", expected.price)
+	}
+
+	if actual.fee != expected.fee {
+		t.Error("Unexpected fee:", actual.fee, "Expected:", expected.fee)
 	}
 }

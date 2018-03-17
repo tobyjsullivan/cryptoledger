@@ -7,13 +7,13 @@ import (
 	"log"
 	"fmt"
 	"strings"
+	"strconv"
+	"math"
 )
 
 const (
 	TransactionTypeTradeBuy = txnType("buy") // Buy the base currency
 	TransactionTypeTradeSell = txnType("sell") // Sell the base currency
-	TransactionTypeWithdrawal = txnType("withdrawal")
-	TransactionTypeDeposit = txnType("deposit")
 
 	CurrencyBTC = currency("BTC")
 	CurrencyETH = currency("ETH")
@@ -40,6 +40,7 @@ var (
 
 	exchangeReaders = map[string]inputReader {
 		ExchangeGdax: readGdax,
+		ExchangeQuadriga: readQuadriga,
 	}
 )
 
@@ -161,14 +162,12 @@ func writeTransactions(f *os.File, txns chan *record) error {
 
 type inputReader func(*os.File, *orderBook) (chan *record, error)
 
-func readGdax(file *os.File, book *orderBook) (chan *record, error) {
+func readRecords(file *os.File, book *orderBook, startRow int, parser recordReader) (chan *record, error) {
 	r := csv.NewReader(file)
 	entries, err := r.ReadAll()
 	if err != nil {
 		return nil, err
 	}
-
-	startRow := 1
 
 	txns := make(chan *record)
 
@@ -178,9 +177,9 @@ func readGdax(file *os.File, book *orderBook) (chan *record, error) {
 				continue
 			}
 
-			rec, err := ParseGdaxRecord(book, entry)
+			rec, err := parser(book, entry)
 			if err != nil {
-				log.Println("[readGdax] Error parsing record: ", err ,". line:", i)
+				log.Println("[readRecords] Error parsing record: ", err ,". line:", i)
 			}
 
 			txns <- rec
@@ -191,6 +190,16 @@ func readGdax(file *os.File, book *orderBook) (chan *record, error) {
 
 	return txns, nil
 }
+
+func readGdax(file *os.File, book *orderBook) (chan *record, error) {
+	return readRecords(file, book, 1, ParseGdaxRecord)
+}
+
+func readQuadriga(file *os.File, book *orderBook) (chan *record, error) {
+	return readRecords(file, book, 1, ParseQuadrigaRecord)
+}
+
+type recordReader func(book *orderBook, values []string) (*record, error)
 
 func ParseGdaxRecord(book *orderBook, values []string) (*record, error) {
 	colSide := 2
@@ -226,6 +235,51 @@ func ParseGdaxRecord(book *orderBook, values []string) (*record, error) {
 
 	return &record{
 		exchange: ExchangeGdax,
+		baseCurrency: book.baseCurrency,
+		quoteCurrency: book.quoteCurrency,
+		txnType: txnType,
+		timestamp: timestamp,
+		amount: amount,
+		price: price,
+		fee: fee,
+	}, nil
+}
+
+func ParseQuadrigaRecord(book *orderBook, values []string) (*record, error) {
+	colType := 0
+	colTimestamp := 8
+	colAmount := 3
+	colPrice := 4
+	colFee := 6
+
+	var err error
+	var txnType txnType
+	var timestamp time.Time
+	var amount string
+	var price string
+	var fee string
+
+	switch values[colType] {
+	case "buy":
+		txnType = TransactionTypeTradeBuy
+	case "sell":
+		txnType = TransactionTypeTradeSell
+	}
+
+	fTime, err := strconv.ParseFloat(values[colTimestamp], 64)
+	if err != nil {
+		return nil, err
+	}
+	sec := int64(math.Floor(fTime))
+	nsec := int64((fTime - math.Floor(fTime)) * 1000) * int64(time.Millisecond)
+	timestamp = time.Unix(sec, nsec).UTC()
+
+	amount = values[colAmount]
+	price = values[colPrice]
+	fee = values[colFee]
+
+	return &record{
+		exchange: ExchangeQuadriga,
 		baseCurrency: book.baseCurrency,
 		quoteCurrency: book.quoteCurrency,
 		txnType: txnType,

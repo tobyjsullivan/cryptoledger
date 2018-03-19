@@ -79,6 +79,32 @@ func TestParseQuadrigaRecord(t *testing.T) {
 	validateRecord(t, expected, result)
 }
 
+func TestParseCoinbaseRecord(t *testing.T) {
+	orderBook := &orderBook{
+		baseCurrency: CurrencyBTC,
+		quoteCurrency: CurrencyCAD,
+	}
+	input := []string{"2016-02-10 20:06:45 -0800","Buy","0.05452059","28.71","1.29","30.0","CAD","526.59","CIBC ******1234","56bc08d4074f13356d000216","\"\""}
+	expected := &record{
+		exchange: ExchangeCoinbase,
+		baseCurrency: CurrencyBTC,
+		quoteCurrency: CurrencyCAD,
+		txnType: TransactionTypeTradeBuy,
+		timestamp: time.Unix(1455163605, 0).UTC(),
+		amount: "0.05452059",
+		price: "526.59",
+		fee: "1.29",
+	}
+
+	result, err := ParseCoinbaseRecord(orderBook, input)
+
+	if err != nil {
+		t.Fatal("Unexpected error:", err)
+	}
+
+	validateRecord(t, expected, result)
+}
+
 func validateRecord(t *testing.T, expected, actual *record) {
 	if actual.exchange != expected.exchange {
 		t.Error("Unexpected exchange:", actual.exchange, "Expected:", expected.exchange)

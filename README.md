@@ -6,6 +6,12 @@ Compute capital gains for crypto trades.
 
 The normalize tool transforms exchange-specific csv exports to a normalized format.
 
+### Exchange-Specific Notes on CSV Exports
+
+#### Coinbase
+
+This tool expect Coinbase transaction reports to be exported using the "Buys, sells, and merchant payouts" type.
+
 ### Install
 
 ```

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"strconv"
 	"math"
+	"bufio"
 )
 
 const (
@@ -39,8 +40,9 @@ var (
 	}
 
 	exchangeReaders = map[string]inputReader {
-		ExchangeGdax: readGdax,
-		ExchangeQuadriga: readQuadriga,
+		ExchangeGdax: readRecords(1, ParseGdaxRecord),
+		ExchangeQuadriga: readRecords(1, ParseQuadrigaRecord),
+		ExchangeCoinbase: readRecords(4, ParseCoinbaseRecord),
 	}
 )
 
@@ -162,41 +164,39 @@ func writeTransactions(f *os.File, txns chan *record) error {
 
 type inputReader func(*os.File, *orderBook) (chan *record, error)
 
-func readRecords(file *os.File, book *orderBook, startRow int, parser recordReader) (chan *record, error) {
-	r := csv.NewReader(file)
-	entries, err := r.ReadAll()
-	if err != nil {
-		return nil, err
-	}
-
-	txns := make(chan *record)
-
-	go func(txns chan *record) {
-		for i, entry := range entries {
-			if i < startRow {
-				continue
-			}
-
-			rec, err := parser(book, entry)
-			if err != nil {
-				log.Println("[readRecords] Error parsing record: ", err ,". line:", i)
-			}
-
-			txns <- rec
+func readRecords(startRow int, parser recordReader) inputReader {
+	return func(file *os.File, book *orderBook) (chan *record, error) {
+		// Skip any lines before startRow so they don't break csv parsing if malformed.
+		i := 0
+		skipReader := bufio.NewReader(file)
+		for ; i < startRow; i++ {
+			skipReader.ReadLine()
 		}
 
-		close(txns)
-	}(txns)
+		r := csv.NewReader(skipReader)
+		entries, err := r.ReadAll()
+		if err != nil {
+			return nil, err
+		}
 
-	return txns, nil
-}
+		txns := make(chan *record)
 
-func readGdax(file *os.File, book *orderBook) (chan *record, error) {
-	return readRecords(file, book, 1, ParseGdaxRecord)
-}
+		go func(txns chan *record) {
+			for _, entry := range entries {
+				i++
+				rec, err := parser(book, entry)
+				if err != nil {
+					log.Println("[readRecords] Error parsing record: ", err ,". line:", i)
+				}
 
-func readQuadriga(file *os.File, book *orderBook) (chan *record, error) {
-	return readRecords(file, book, 1, ParseQuadrigaRecord)
+				txns <- rec
+			}
+
+			close(txns)
+		}(txns)
+
+		return txns, nil
+	}
 }
 
 type recordReader func(book *orderBook, values []string) (*record, error)
@@ -284,6 +284,51 @@ func ParseQuadrigaRecord(book *orderBook, values []string) (*record, error) {
 		quoteCurrency: book.quoteCurrency,
 		txnType: txnType,
 		timestamp: timestamp,
+		amount: amount,
+		price: price,
+		fee: fee,
+	}, nil
+}
+
+func ParseCoinbaseRecord(book *orderBook, values []string) (*record, error) {
+	colType := 1
+	colTimestamp := 0
+	colAmount := 2
+	colPrice := 7
+	colFee := 4
+
+	//Mon Jan 2 15:04:05 -0700 MST 2006
+	//"2016-02-10 20:06:45 -0800"
+	timeFmt := "2006-01-02 15:04:05 -0700"
+
+	var err error
+	var txnType txnType
+	var timestamp time.Time
+	var amount string
+	var price string
+	var fee string
+
+	switch values[colType] {
+	case "Buy":
+		txnType = TransactionTypeTradeBuy
+	case "Sell":
+		txnType = TransactionTypeTradeSell
+	}
+
+	timestamp, err = time.Parse(timeFmt, values[colTimestamp])
+	if err != nil {
+		return nil, err
+	}
+	amount = values[colAmount]
+	price = values[colPrice]
+	fee = values[colFee]
+
+	return &record{
+		exchange: ExchangeCoinbase,
+		baseCurrency: book.baseCurrency,
+		quoteCurrency: book.quoteCurrency,
+		txnType: txnType,
+		timestamp: timestamp.UTC(),
 		amount: amount,
 		price: price,
 		fee: fee,
